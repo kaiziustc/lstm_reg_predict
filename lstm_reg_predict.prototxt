@@ -1,0 +1,451 @@
+name: "lstm_reg_predict"
+
+layer {
+  name: "data"
+  type: "HDF5Data"
+#  top: "cont"
+  top: "input_frame_fea"
+  top: "target_frame_fea"
+#  top: "data"
+  top: "label"
+
+	include { phase: TRAIN}
+
+  hdf5_data_param {
+
+    source: "/disk/HAnFeng/dataset/UCF101/extr4096/fc6_all/FC6_trainlist25p03/fc6list_pool5_resnet_rgb_for_predict_v3.txt"
+
+    batch_size: 10 #10
+    shuffle: True
+
+  }
+
+}
+
+
+
+layer {
+
+  name: "data"
+  type: "HDF5Data"
+#  top: "cont"
+  top: "input_frame_fea"
+  top: "target_frame_fea"
+#  top: "data"
+  top: "label"
+
+	include { phase: TEST}
+
+  hdf5_data_param {
+
+    source: "/disk/HAnFeng/dataset/UCF101/extr4096/fc6_all/FC6_testlist25p03/fc6list_pool5_resnet_rgb_for_predict_v3.txt"
+
+    batch_size: 10 #10
+
+  }
+
+}
+
+
+layer {
+
+  name: "video_unroll"
+
+  type: "VideoUnroll"
+
+  bottom: "input_frame_fea"
+
+  top: "frame_data"
+
+  top: "cont"
+
+  top: "frames_per_video"
+
+  video_unroll_param {
+
+    frame_channels: 1
+
+  }
+
+}
+
+
+layer {
+
+  name: "reshape_target"
+
+  type: "Reshape"
+
+  bottom: "target_frame_fea"
+
+  top: "target_frame_fea_reshape"
+
+  reshape_param {
+
+    shape {
+
+        dim: 240
+
+        dim:1
+
+        dim:2048 #4096
+
+    }
+
+  }
+
+}
+
+
+
+
+layer {
+
+	name: "label_expand"
+
+	type: "VideoLabelExpand"
+
+	bottom: "label"
+
+	bottom: "frames_per_video"
+
+	top: "frame_label"
+
+	include { phase:TRAIN}
+
+}
+
+
+
+
+
+layer {
+
+  name: "reshape"
+
+  type: "Reshape"
+
+  bottom: "frame_data"
+
+  top: "reshape"
+
+  reshape_param {
+
+    shape {
+
+        dim: 240 #250
+
+        dim:1
+
+        dim:2048 #4096
+
+    }
+
+  }
+
+}
+
+
+
+layer {
+
+  name: "lstm1"
+
+  type: "LSTM"
+
+  bottom: "reshape"
+
+  bottom: "cont"
+
+  top: "fc7"
+
+  recurrent_param {
+
+    num_output: 1024
+
+    weight_filler {
+
+      type: "uniform"
+
+      min: -0.03
+
+      max: 0.03
+
+    }
+
+    bias_filler {
+
+      type: "constant"
+
+      value: 0
+
+    }
+
+  }
+
+}
+
+
+
+layer {
+
+  name: "relu7"
+
+  type: "ReLU"
+
+  bottom: "fc7"
+
+  top: "fc7"
+
+}
+
+layer {
+
+  name: "drop7"
+
+  type: "Dropout"
+
+  bottom: "fc7"
+
+  top: "fc7"
+
+  dropout_param {
+
+    dropout_ratio: 0.5
+
+  }
+
+}
+
+
+layer {
+
+  name: "fc8_4096"
+
+  type: "InnerProduct"
+
+  bottom: "fc7"
+
+  top: "predict_frame_fea"
+
+  param {
+
+    lr_mult: 1
+
+    decay_mult: 1
+
+  }
+
+  param {
+
+    lr_mult: 2
+
+    decay_mult: 0
+
+  }
+
+  inner_product_param {
+
+    num_output: 2048 #4096
+
+    weight_filler {
+
+      type: "gaussian"
+
+			std: 0.01
+
+    }
+
+    bias_filler {
+
+      type: "constant"
+
+      value: 0
+
+    }
+
+    axis: 1
+
+  }
+
+}
+
+
+
+layer {
+
+  name: "fc8_101"
+
+  type: "InnerProduct"
+
+  bottom: "fc7"
+
+  top: "fc8_101"
+
+  param {
+
+    lr_mult: 1
+
+    decay_mult: 1
+
+  }
+
+  param {
+
+    lr_mult: 2
+
+    decay_mult: 0
+
+  }
+
+  inner_product_param {
+
+    num_output: 101
+
+    weight_filler {
+
+      type: "gaussian"
+
+			std: 0.01
+
+    }
+
+    bias_filler {
+
+      type: "constant"
+
+      value: 0
+
+    }
+
+    axis: 1
+
+  }
+
+}
+
+
+
+
+
+
+layer {
+
+	name: "softmax"
+
+	type: "Softmax"
+
+	bottom: "fc8_101"
+
+	top: "fc8_101"
+
+	include { phase: TEST}
+
+}
+
+
+
+layer {
+
+  name:"frames_roll"
+
+  type:"FramesRoll"
+
+  bottom:"fc8_101"
+
+  bottom:"frames_per_video"
+
+  top:"video_predict"
+
+	include { phase: TEST}
+
+}
+
+
+
+layer {
+
+  name:"video_pooling"
+
+  type:"AxisPooling"
+
+  bottom:"video_predict"
+
+  top:"pool_video_predict"
+
+	include { phase: TEST}
+
+  axis_pooling_param {
+
+    axis: 1 
+
+		pool: AVE
+
+  }
+
+}
+
+
+
+layer {
+
+  name: "accuracy"
+
+  type: "Accuracy"
+
+  bottom: "pool_video_predict"
+
+  bottom: "label"
+
+  top: "accuracy"
+
+	include { phase: TEST}
+
+	accuracy_param {
+
+    axis: -1
+
+  }
+
+}
+
+
+
+
+layer {
+
+  name: "loss"
+
+  type: "SoftmaxWithLoss"
+
+  bottom: "fc8_101"
+
+  bottom: "frame_label"
+
+  top: "softmax_loss"
+
+  loss_weight: 1
+
+	include { phase: TRAIN}
+
+	softmax_param {
+
+    axis: -1
+
+  }
+#  loss_param{ 
+#    normalize: 0  #1 normalization: FULL }
+#  }
+}
+
+layer{
+    name: "euclidean_loss_frames"
+    type: "EuclideanLoss"
+    bottom: "predict_frame_fea"
+    bottom: "target_frame_fea_reshape"
+    top: "euc_loss"
+    loss_weight: 0
+#   include { phase: TRAIN}
+}
+
+
